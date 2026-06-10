@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Remote Career Copilot
 
-## Getting Started
+> An AI agent that helps developers in emerging markets find and land remote jobs.
 
-First, run the development server:
+Built for the **Google Cloud Rapid Agent Hackathon 2026** — MongoDB track.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+[![License: MIT](https://img.shields.io/badge/License-MIT-violet.svg)](LICENSE)
+
+## What it does
+
+1. **CV Analysis** — Upload your PDF; Gemini extracts skills, experience, job titles
+2. **Job Matching** — Real remote listings from Adzuna, ranked by profile fit
+3. **Skill Gap Analysis** — Learning roadmap based on job market demands
+4. **Application Tracker** — Log every application, MongoDB stores your history
+5. **Follow-up Alerts** — Agent flags stale applications and drafts follow-up emails
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 16 (App Router) |
+| Agent | Google Cloud Agent Builder (ADK 2.x) |
+| LLM | Gemini 3.5 Flash (Vertex AI) |
+| Database | MongoDB Atlas + MCP server |
+| Jobs | Adzuna API |
+| Deploy | Vercel + Cloud Run |
+
+## Partner Integration — MongoDB
+
+Uses the official **MongoDB MCP server** (`@mongodb-js/mongodb-mcp-server`) to give the ADK agent direct Atlas access for all career data operations.
+
+## Architecture
+
+```
+Browser (Next.js → Vercel)
+    ↓
+/api/agent (proxy)
+    ↓
+ADK Agent (Python → Cloud Run)
+    ↓ tools
+MongoDB Atlas  ← MCP server + pymongo
+Adzuna API     ← job listings
+Gemini 3.5     ← Vertex AI Agent Platform
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Quick Start
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+git clone https://github.com/victorojo007/remote-career-copilot
+cd remote-career-copilot
+npm install
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Start agent
+cd agent && uv sync && uv run python main.py
 
-## Learn More
+# Start frontend (new terminal)
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+See `.env.local.example` and `agent/.env.example` for required environment variables.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## License
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT © 2026 Osamudiamen Ojo

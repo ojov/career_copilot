@@ -1,0 +1,15 @@
+[project]
+name = "remote-career-copilot-agent"
+version = "0.1.0"
+description = "Remote Career Copilot — ADK agent with MongoDB MCP"
+requires-python = ">=3.11"
+dependencies = [
+    "google-adk>=2.2.0",
+    "fastapi>=0.128.0",
+    "uvicorn>=0.39.0",
+    "pymongo>=4.17.0",
+    "python-dotenv>=1.2.0",
+    "httpx>=0.28.0",
+    "mcp>=1.9.0",
+    "certifi>=2026.5.20",
+]
