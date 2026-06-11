@@ -25,10 +25,16 @@ export default function Dashboard() {
       const res = await fetch(`/api/jobs?profileId=${id}`)
       const data = await res.json()
       setJobs(data.jobs ?? [])
-      setGapAnalysis(data.gapAnalysis ?? null)
     } finally {
       setLoadingJobs(false)
     }
+
+    // Skill-gap analysis is slower (~10s) — load it in the background so the
+    // job list isn't blocked. The Roadmap tab fills in once it resolves.
+    fetch(`/api/gaps?profileId=${id}`)
+      .then(r => r.json())
+      .then(d => setGapAnalysis(d.gapAnalysis ?? null))
+      .catch(() => setGapAnalysis(null))
   }
 
   if (!profileId) {

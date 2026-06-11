@@ -3,8 +3,8 @@ import { getDb } from '@/lib/mongodb'
 import { searchJobs } from '@/lib/jobs'
 import { ObjectId } from 'mongodb'
 
-const AGENT_URL = process.env.AGENT_SERVICE_URL ?? 'http://localhost:8089'
-
+// Returns job listings only. Skill-gap analysis is a separate, slower call
+// (/api/gaps) so the job list renders fast and never depends on the agent.
 export async function GET(req: NextRequest) {
   try {
     const profileId = req.nextUrl.searchParams.get('profileId')
@@ -14,36 +14,19 @@ export async function GET(req: NextRequest) {
     const profile = await db.collection('profiles').findOne({ _id: new ObjectId(profileId) })
     if (!profile) return Response.json({ error: 'Profile not found' }, { status: 404 })
 
-    const jobs = await searchJobs(profile.skills.slice(0, 5))
+    const skills: string[] = Array.isArray(profile.skills) ? profile.skills : []
+    const jobs = await searchJobs(skills.slice(0, 5))
 
     if (jobs.length === 0) {
-      return Response.json({ jobs: [], gapAnalysis: null })
+      return Response.json({ jobs: [] })
     }
 
-    // Cache jobs in MongoDB
+    // Cache jobs so /api/gaps can analyze them without re-fetching.
     await db.collection('jobs').insertMany(
       jobs.map(j => ({ ...j, profileId, cachedAt: new Date() }))
     )
 
-    const descriptions = jobs.map(j => j.description)
-    const gapRes = await fetch(`${AGENT_URL}/analyze-gaps`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skills: profile.skills, job_descriptions: descriptions }),
-    })
-    if (!gapRes.ok) {
-      const detail = await gapRes.text()
-      throw new Error(`Agent analyze-gaps failed: ${gapRes.status} ${detail}`)
-    }
-    const gapAnalysis = await gapRes.json()
-
-    // Persist so the chat agent's get_skill_gaps tool can read it
-    await db.collection('profiles').updateOne(
-      { _id: new ObjectId(profileId) },
-      { $set: { gapAnalysis, updatedAt: new Date() } }
-    )
-
-    return Response.json({ jobs, gapAnalysis })
+    return Response.json({ jobs })
   } catch (err) {
     console.error(err)
     return Response.json({ error: 'Failed to fetch jobs' }, { status: 500 })

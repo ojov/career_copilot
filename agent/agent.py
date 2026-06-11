@@ -134,7 +134,7 @@ def create_mongodb_mcp_toolset() -> MCPToolset:
 # jobs when the structured job APIs return nothing useful.
 job_search_agent = Agent(
     name="job_web_search",
-    model="gemini-3.5-flash",
+    model="gemini-2.5-flash",
     description="Searches the web for current remote job openings.",
     instruction="""You search the web for remote job openings matching the user's
 skills and preferences. Use Google Search to find real, currently-open remote
@@ -155,7 +155,7 @@ def create_career_agent() -> Agent:
 
     return Agent(
         name="remote_career_copilot",
-        model="gemini-3.5-flash",
+        model="gemini-2.5-flash",
         description="A career agent that helps developers in emerging markets find and land remote jobs.",
         instruction="""You are a Remote Career Copilot — an AI agent helping developers in emerging markets
 find remote jobs, close skill gaps, and manage their job search.

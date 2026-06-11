@@ -25,17 +25,31 @@ function stripHtml(html: string): string {
   return (html ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
+// Return all lowercase variants of a skill name to handle tag normalisation.
+// e.g. "Node.js" → ["node.js", "node", "nodejs"], "React.js" → ["react.js", "react", "reactjs"]
+function skillVariants(skill: string): string[] {
+  const s = skill.toLowerCase().trim()
+  const variants = new Set([s, s.replace(/\s+/g, '')])
+  if (s.endsWith('.js')) {
+    const base = s.slice(0, -3)
+    variants.add(base)
+    variants.add(base + 'js')
+  }
+  return [...variants].filter(Boolean)
+}
+
 // Score a job by how many of the user's skills appear in its text. The free
 // remote-first APIs have loose/broken search, so we filter for relevance here.
 function relevanceScore(job: Job, skills: string[]): number {
   const haystack = `${job.title} ${job.description} ${job.source}`.toLowerCase()
+  const titleLower = job.title.toLowerCase()
   let score = 0
   for (const skill of skills) {
-    const s = skill.toLowerCase().trim()
-    if (!s) continue
+    const variants = skillVariants(skill)
+    if (!variants.length) continue
     // Title matches count double — they're the strongest signal.
-    if (job.title.toLowerCase().includes(s)) score += 2
-    else if (haystack.includes(s)) score += 1
+    if (variants.some(v => titleLower.includes(v))) score += 2
+    else if (variants.some(v => haystack.includes(v))) score += 1
   }
   return score
 }
@@ -68,8 +82,13 @@ async function remotive(query: string): Promise<Job[]> {
 
 // ── RemoteOK ──────────────────────────────────────────────────────────────────
 async function remoteok(query: string): Promise<Job[]> {
-  const tag = query.split(' ')[0]?.toLowerCase() ?? 'dev'
-  const url = `https://remoteok.com/api?tags=${encodeURIComponent(tag)}`
+  // RemoteOK accepts comma-separated tags; normalise each skill to alphanumeric slug.
+  const tags = query.split(' ')
+    .slice(0, 3)
+    .map(k => k.toLowerCase().replace(/[^a-z0-9]/g, ''))
+    .filter(Boolean)
+    .join(',') || 'dev'
+  const url = `https://remoteok.com/api?tags=${encodeURIComponent(tags)}`
   const res = await fetch(url, {
     headers: { 'User-Agent': 'remote-career-copilot' },
     signal: AbortSignal.timeout(8000),

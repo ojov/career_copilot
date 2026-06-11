@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 
-const AGENT_URL = process.env.AGENT_SERVICE_URL ?? 'http://localhost:8080'
+const AGENT_URL = process.env.AGENT_SERVICE_URL ?? 'http://localhost:8089'
 
 export async function POST(req: NextRequest) {
   try {

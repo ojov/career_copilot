@@ -75,7 +75,7 @@ async def health():
 _genai_client = None
 
 
-GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 
 
 def get_genai_client():
