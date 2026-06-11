@@ -26,38 +26,54 @@ function stripHtml(html: string): string {
 }
 
 // Return all lowercase variants of a skill name to handle tag normalisation.
-// e.g. "Node.js" → ["node.js", "node", "nodejs"], "React.js" → ["react.js", "react", "reactjs"]
+// e.g. "Node.js" → ["node.js", "node", "nodejs"], "JavaScript/TypeScript" →
+// ["javascript", "typescript"]. Splits on slashes so combined skills match.
 function skillVariants(skill: string): string[] {
-  const s = skill.toLowerCase().trim()
-  const variants = new Set([s, s.replace(/\s+/g, '')])
-  if (s.endsWith('.js')) {
-    const base = s.slice(0, -3)
-    variants.add(base)
-    variants.add(base + 'js')
+  const variants = new Set<string>()
+  for (const part of skill.toLowerCase().split('/')) {
+    const s = part.trim()
+    if (!s) continue
+    variants.add(s)
+    variants.add(s.replace(/\s+/g, ''))
+    if (s.endsWith('.js')) {
+      const base = s.slice(0, -3)
+      variants.add(base)
+      variants.add(base + 'js')
+    }
   }
   return [...variants].filter(Boolean)
+}
+
+// Whole-word match so short skills don't false-positive on substrings:
+// "go" must not match "ongoing", "java" must not match "javascript".
+function matchesWord(haystack: string, term: string): boolean {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, 'i').test(haystack)
 }
 
 // Score a job by how many of the user's skills appear in its text. The free
 // remote-first APIs have loose/broken search, so we filter for relevance here.
 function relevanceScore(job: Job, skills: string[]): number {
-  const haystack = `${job.title} ${job.description} ${job.source}`.toLowerCase()
   const titleLower = job.title.toLowerCase()
+  const bodyLower = `${job.description} ${job.source}`.toLowerCase()
   let score = 0
   for (const skill of skills) {
     const variants = skillVariants(skill)
     if (!variants.length) continue
     // Title matches count double — they're the strongest signal.
-    if (variants.some(v => titleLower.includes(v))) score += 2
-    else if (variants.some(v => haystack.includes(v))) score += 1
+    if (variants.some(v => matchesWord(titleLower, v))) score += 2
+    else if (variants.some(v => matchesWord(bodyLower, v))) score += 1
   }
   return score
 }
 
+// Require at least 2 points so a single coincidental match (e.g. the word "go"
+// in prose) can't qualify an unrelated sales/writing job. A genuine match hits
+// the title or several distinct skills.
 function filterByRelevance(jobs: Job[], skills: string[]): Job[] {
   return jobs
     .map((job) => ({ job, score: relevanceScore(job, skills) }))
-    .filter(({ score }) => score > 0)
+    .filter(({ score }) => score >= 2)
     .sort((a, b) => b.score - a.score)
     .map(({ job }) => job)
 }
@@ -150,22 +166,43 @@ const PROVIDERS: Provider[] = [
   { name: 'Adzuna', fetchJobs: (q) => adzuna(q) },
 ]
 
+// Cap how many roles any single company contributes so one employer posting the
+// same job across many cities (e.g. Remotive's fixed set) doesn't dominate.
+function dedupeByCompany(jobs: Job[], maxPerCompany = 2): Job[] {
+  const counts = new Map<string, number>()
+  const seen = new Set<string>()
+  const out: Job[] = []
+  for (const job of jobs) {
+    const company = job.company.toLowerCase().trim()
+    // Skip exact same role at the same company (duplicate listings).
+    const exact = `${company}::${job.title.toLowerCase().trim()}`
+    if (seen.has(exact)) continue
+    const n = counts.get(company) ?? 0
+    if (n >= maxPerCompany) continue
+    seen.add(exact)
+    counts.set(company, n + 1)
+    out.push(job)
+  }
+  return out
+}
+
+const MIN_VARIETY = 4 // distinct, relevant roles before we accept a provider
+
 export async function searchJobs(keywords: string[]): Promise<Job[]> {
   // OR semantics over the top few skills — ANDing many keywords kills results.
   const query = keywords.slice(0, 3).join(' ') || 'developer'
   const errors: string[] = []
+  let best: Job[] = [] // fallback: the most varied result if none clear the bar
 
   for (const provider of PROVIDERS) {
     try {
       const raw = await provider.fetchJobs(query)
-      // The free remote-first APIs return loosely-matched (often irrelevant)
-      // results, so only accept a provider if it yields skill-relevant jobs.
-      const relevant = filterByRelevance(raw, keywords).slice(0, 10)
-      if (relevant.length > 0) {
-        console.log(`[jobs] ${provider.name}: ${relevant.length}/${raw.length} relevant for "${query}"`)
-        return relevant
-      }
-      console.log(`[jobs] ${provider.name}: 0 relevant of ${raw.length}, trying next provider`)
+      // Free APIs return loosely-matched results; filter for skill relevance,
+      // then cap per-company so the list isn't one employer repeated.
+      const relevant = dedupeByCompany(filterByRelevance(raw, keywords)).slice(0, 10)
+      console.log(`[jobs] ${provider.name}: ${relevant.length} relevant/varied of ${raw.length} for "${query}"`)
+      if (relevant.length >= MIN_VARIETY) return relevant
+      if (relevant.length > best.length) best = relevant
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       errors.push(`${provider.name}: ${msg}`)
@@ -173,6 +210,11 @@ export async function searchJobs(keywords: string[]): Promise<Job[]> {
     }
   }
 
+  // None hit the variety bar — return the best we found rather than nothing.
+  if (best.length > 0) {
+    console.log(`[jobs] no provider hit variety bar; returning best (${best.length})`)
+    return best
+  }
   console.warn(`[jobs] all providers exhausted for "${query}". ${errors.join('; ')}`)
   return []
 }

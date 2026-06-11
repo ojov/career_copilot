@@ -15,7 +15,10 @@ export async function GET(req: NextRequest) {
     if (!profile) return Response.json({ error: 'Profile not found' }, { status: 404 })
 
     const skills: string[] = Array.isArray(profile.skills) ? profile.skills : []
-    const jobs = await searchJobs(skills.slice(0, 5))
+    // Pass a generous slice: searchJobs queries on the top few but scores
+    // relevance against all of them, so distinctive skills (FastAPI, Kafka)
+    // help surface genuinely matching roles.
+    const jobs = await searchJobs(skills.slice(0, 15))
 
     if (jobs.length === 0) {
       return Response.json({ jobs: [] })
