@@ -1,0 +1,92 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # ── Frontend → Vercel ────────────────────────────────────────────────────────
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Vercel CLI
+        run: pnpm add -g vercel@latest
+
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Build
+        run: vercel build --prod --token=$VERCEL_TOKEN
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy to production
+        run: vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+  # ── Agent → Cloud Run (only when agent/ changes) ─────────────────────────────
+  deploy-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check if agent/ changed
+        id: changes
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -q '^agent/'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No agent/ changes — skipping Cloud Run deploy."
+          fi
+
+      - name: Authenticate to Google Cloud
+        if: steps.changes.outputs.changed == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        if: steps.changes.outputs.changed == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: career-copilot-hack
+
+      - name: Build and push image
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          gcloud builds submit agent \
+            --tag gcr.io/career-copilot-hack/career-agent \
+            --project career-copilot-hack
+
+      - name: Deploy to Cloud Run
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          gcloud run deploy career-agent \
+            --image gcr.io/career-copilot-hack/career-agent \
+            --platform managed --region us-central1 \
+            --allow-unauthenticated --memory 1Gi \
+            --set-env-vars "MONGODB_URI=${{ secrets.MONGODB_URI }},GOOGLE_CLOUD_PROJECT=career-copilot-hack,GOOGLE_CLOUD_LOCATION=global,GOOGLE_GENAI_USE_VERTEXAI=TRUE" \
+            --project career-copilot-hack
