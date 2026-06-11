@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from bson import ObjectId
 from google.adk.agents import Agent
+from google.adk.tools import google_search
+from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 
@@ -15,8 +17,12 @@ _mongo_client = None
 def get_db():
     global _mongo_client
     if _mongo_client is None:
-        import certifi
-        _mongo_client = MongoClient(os.environ["MONGODB_URI"], tlsCAFile=certifi.where())
+        import platform
+        kwargs = {}
+        if platform.system() == "Darwin":
+            import certifi
+            kwargs["tlsCAFile"] = certifi.where()
+        _mongo_client = MongoClient(os.environ["MONGODB_URI"], **kwargs)
     return _mongo_client["career_copilot"]
 
 
@@ -120,6 +126,25 @@ def create_mongodb_mcp_toolset() -> MCPToolset:
     )
 
 
+# ── Web search sub-agent ──────────────────────────────────────────────────────
+
+# Gemini does not allow the built-in google_search tool to coexist with custom
+# function tools in a single agent, so we isolate it in a sub-agent and expose it
+# to the root agent via AgentTool. This is the web-search fallback for finding
+# jobs when the structured job APIs return nothing useful.
+job_search_agent = Agent(
+    name="job_web_search",
+    model="gemini-3.5-flash",
+    description="Searches the web for current remote job openings.",
+    instruction="""You search the web for remote job openings matching the user's
+skills and preferences. Use Google Search to find real, currently-open remote
+positions. Return a concise list: for each job include the title, company,
+a one-line summary, and the application URL. Prioritize roles that are explicitly
+remote and open to international/emerging-market applicants.""",
+    tools=[google_search],
+)
+
+
 # ── Agent ─────────────────────────────────────────────────────────────────────
 
 def create_career_agent() -> Agent:
@@ -142,13 +167,16 @@ You have access to:
 - Skill gap analysis
 
 Your capabilities:
-1. Retrieve and explain matched job listings
-2. Analyze skill gaps and suggest a learning roadmap
-3. Log new job applications when the user tells you they applied somewhere
-4. Identify applications that need follow-up (no response in 7+ days)
-5. Draft professional follow-up emails
-6. Answer questions about the job search process
+1. Retrieve and explain matched job listings (search_cached_jobs)
+2. Search the live web for fresh remote openings (job_web_search) — use this when
+   the cached listings are empty, stale, or the user asks for more/different jobs
+3. Analyze skill gaps and suggest a learning roadmap
+4. Log new job applications when the user tells you they applied somewhere
+5. Identify applications that need follow-up (no response in 7+ days)
+6. Draft professional follow-up emails
+7. Answer questions about the job search process
 
+Prefer cached listings first (fast); fall back to job_web_search for live results.
 Always be encouraging, specific, and action-oriented. When the user logs an application,
 confirm the details. When they ask about follow-ups, surface the specific companies and
 draft emails if asked. Keep responses concise and helpful.""",
@@ -159,6 +187,7 @@ draft emails if asked. Keep responses concise and helpful.""",
             get_applications,
             get_stale_applications,
             get_skill_gaps,
+            AgentTool(agent=job_search_agent),
         ],
     )
 

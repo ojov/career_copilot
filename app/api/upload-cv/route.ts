@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server'
 import { getDb } from '@/lib/mongodb'
 import { extractTextFromPdf } from '@/lib/pdf-parser'
-import { extractProfileFromCV } from '@/lib/gemini'
+
+const AGENT_URL = process.env.AGENT_SERVICE_URL ?? 'http://localhost:8089'
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,7 +12,17 @@ export async function POST(req: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer())
     const text = await extractTextFromPdf(buffer)
-    const profile = await extractProfileFromCV(text)
+
+    const res = await fetch(`${AGENT_URL}/extract-cv`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+    if (!res.ok) {
+      const detail = await res.text()
+      throw new Error(`Agent extract-cv failed: ${res.status} ${detail}`)
+    }
+    const profile = await res.json()
 
     const db = await getDb()
     const result = await db.collection('profiles').insertOne({
