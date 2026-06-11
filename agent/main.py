@@ -116,6 +116,33 @@ def generate_json(prompt: str, what: str) -> dict:
         raise HTTPException(status_code=500, detail=f"Invalid JSON in {what}")
 
 
+def extract_pdf_text(pdf_bytes: bytes) -> str:
+    """Extract plain text from PDF bytes using pypdf."""
+    import io
+    from pypdf import PdfReader
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+class ExtractCVPdfRequest(BaseModel):
+    pdf_base64: str
+
+
+@app.post("/extract-cv-pdf")
+async def extract_cv_pdf(req: ExtractCVPdfRequest):
+    import base64
+    try:
+        pdf_bytes = base64.b64decode(req.pdf_base64)
+        text = extract_pdf_text(pdf_bytes)
+    except Exception:
+        log.exception("extract-cv-pdf: failed to read PDF")
+        raise HTTPException(status_code=400, detail="Could not read PDF")
+    log.info("extract-cv-pdf: extracted %d chars from PDF", len(text))
+    if not text.strip():
+        raise HTTPException(status_code=422, detail="No text found in PDF")
+    return _structure_cv(text)
+
+
 class ExtractCVRequest(BaseModel):
     text: str
 
@@ -123,6 +150,10 @@ class ExtractCVRequest(BaseModel):
 @app.post("/extract-cv")
 async def extract_cv(req: ExtractCVRequest):
     log.info("extract-cv: %d chars of CV text", len(req.text))
+    return _structure_cv(req.text)
+
+
+def _structure_cv(text: str) -> dict:
     prompt = f"""You are a career analyst. Extract structured information from this CV/resume text.
 Return ONLY valid JSON with this exact shape:
 {{
@@ -135,7 +166,7 @@ Return ONLY valid JSON with this exact shape:
 }}
 
 CV Text:
-{req.text}
+{text}
 """
     profile = generate_json(prompt, "extract-cv")
     log.info("extract-cv: extracted %d skills for %s",
