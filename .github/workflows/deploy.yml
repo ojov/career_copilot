@@ -62,7 +62,8 @@ jobs:
         run: |
           gcloud builds submit agent \
             --tag gcr.io/career-copilot-hack/career-agent \
-            --project career-copilot-hack
+            --project career-copilot-hack \
+            --suppress-logs
 
       - name: Deploy to Cloud Run
         if: steps.changes.outputs.changed == 'true'
