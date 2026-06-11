@@ -3,6 +3,7 @@ name: Deploy to Production
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   # ── Frontend → Vercel ────────────────────────────────────────────────────────
@@ -38,7 +39,10 @@ jobs:
       - name: Check if agent/ changed
         id: changes
         run: |
-          if git diff --name-only HEAD~1 HEAD | grep -q '^agent/'; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch — building agent."
+          elif git diff --name-only HEAD~1 HEAD | grep -q '^agent/'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -63,7 +67,7 @@ jobs:
           gcloud builds submit agent \
             --tag gcr.io/career-copilot-hack/career-agent \
             --project career-copilot-hack \
-            --suppress-logs
+            --default-buckets-behavior=regional-user-owned-bucket
 
       - name: Deploy to Cloud Run
         if: steps.changes.outputs.changed == 'true'
